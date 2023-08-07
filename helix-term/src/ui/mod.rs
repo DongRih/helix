@@ -21,7 +21,7 @@ pub use completion::{Completion, CompletionItem};
 pub use editor::EditorView;
 pub use markdown::Markdown;
 pub use menu::Menu;
-pub use picker::{DynamicPicker, FileLocation, FilePicker, Picker};
+pub use picker::{DynamicPicker, FileLocation, Picker};
 pub use popup::Popup;
 pub use prompt::{Prompt, PromptEvent};
 pub use spinner::{ProgressSpinners, Spinner};
@@ -142,23 +142,21 @@ pub fn regex_prompt(
                                 };
 
                                 cx.jobs.callback(callback);
-                            } else {
-                                // Update
-                                // TODO: mark command line as error
                             }
                         }
                     }
                 }
             }
         },
-    );
+    )
+    .with_language("regex", std::sync::Arc::clone(&cx.editor.syn_loader));
     // Calculate initial completion
     prompt.recalculate_completion(cx.editor);
     // prompt
     cx.push_layer(Box::new(prompt));
 }
 
-pub fn file_picker(root: PathBuf, config: &helix_view::editor::Config) -> FilePicker<PathBuf> {
+pub fn file_picker(root: PathBuf, config: &helix_view::editor::Config) -> Picker<PathBuf> {
     use ignore::{types::TypesBuilder, WalkBuilder};
     use std::time::Instant;
 
@@ -217,21 +215,17 @@ pub fn file_picker(root: PathBuf, config: &helix_view::editor::Config) -> FilePi
 
     log::debug!("file_picker init {:?}", Instant::now().duration_since(now));
 
-    FilePicker::new(
-        files,
-        root,
-        move |cx, path: &PathBuf, action| {
-            if let Err(e) = cx.editor.open(path, action) {
-                let err = if let Some(err) = e.source() {
-                    format!("{}", err)
-                } else {
-                    format!("unable to open \"{}\"", path.display())
-                };
-                cx.editor.set_error(err);
-            }
-        },
-        |_editor, path| Some((path.clone().into(), None)),
-    )
+    Picker::new(files, root, move |cx, path: &PathBuf, action| {
+        if let Err(e) = cx.editor.open(path, action) {
+            let err = if let Some(err) = e.source() {
+                format!("{}", err)
+            } else {
+                format!("unable to open \"{}\"", path.display())
+            };
+            cx.editor.set_error(err);
+        }
+    })
+    .with_preview(|_editor, path| Some((path.clone().into(), None)))
 }
 
 pub mod completers {
@@ -476,7 +470,7 @@ pub mod completers {
                 match path.parent() {
                     Some(path) if !path.as_os_str().is_empty() => path.to_path_buf(),
                     // Path::new("h")'s parent is Some("")...
-                    _ => std::env::current_dir().expect("couldn't determine current directory"),
+                    _ => helix_loader::current_working_dir(),
                 }
             };
 
